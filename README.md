@@ -14,3 +14,11 @@ printed output is shared back.
 uv sync          # creates .venv and installs dependencies
 uv run python scripts/inspect_data.py /path/to/MIAAM_V1 /path/to/MIAAM_V2 --out data_summary.txt
 ```
+
+### 2. Explore structure for metric design
+
+```bash
+uv run python scripts/explore_miaam.py ../MIAAM/data --out explore_summary.txt
+```
+Prints only aggregates (no student-level rows). Use `--skip-full` to analyse only
+`maths_data_filtered.parquet` if memory is tight.

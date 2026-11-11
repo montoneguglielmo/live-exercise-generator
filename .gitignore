@@ -2,3 +2,4 @@ data_summary.txt
 __pycache__/
 *.pyc
 .venv/
+explore_summary.txt
