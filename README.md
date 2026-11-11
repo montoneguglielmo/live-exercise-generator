@@ -22,3 +22,12 @@ uv run python scripts/explore_miaam.py ../MIAAM/data --out explore_summary.txt
 ```
 Prints only aggregates (no student-level rows). Use `--skip-full` to analyse only
 `maths_data_filtered.parquet` if memory is tight.
+
+### 3. Metrics v0: Enabler and Stimulating
+
+```bash
+uv run python scripts/metrics_v0.py ../MIAAM-v2/data --out metrics_v0_summary.txt
+uv run python tests/simulate_metrics.py   # sanity check on simulated data with known effects
+```
+Definitions and tests are documented at the top of `scripts/metrics_v0.py`.
+Writes `outputs/exercise_scores_v0.parquet` (add `--save-interactions` for per-interaction scores).

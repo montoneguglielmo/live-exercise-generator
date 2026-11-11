@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 .venv/
 explore_summary.txt
+outputs/
+metrics_v0_summary.txt
+explore_summary_v2.txt
+data_summary*.txt
