@@ -11,6 +11,7 @@ printed output is shared back.
 ### 1. Inspect the data
 
 ```bash
-pip install pandas pyarrow   # pyarrow only needed for parquet/feather
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
 python scripts/inspect_data.py /path/to/MIAAM_V1 /path/to/MIAAM_V2 --out data_summary.txt
 ```
