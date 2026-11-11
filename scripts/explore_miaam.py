@@ -25,6 +25,21 @@ import pyarrow.parquet as pq
 OUT = io.StringIO()
 
 
+def parse_content(c):
+    """Exercise content is JSON in V1 but may be a Python dict repr in V2."""
+    import ast
+    if isinstance(c, dict):
+        return c
+    try:
+        return json.loads(c)
+    except Exception:
+        try:
+            v = ast.literal_eval(c)
+            return v if isinstance(v, dict) else {"<non-dict>": v}
+        except Exception:
+            return None
+
+
 def p(*args):
     OUT.write(" ".join(str(a) for a in args) + "\n")
 
@@ -135,16 +150,18 @@ def exercises_section(root):
     for _, r in ex.drop_duplicates("objective_id").head(8).iterrows():
         p(f"  [{r.module_name}] {r.objective_name} | {str(r.objective_pedagogical_intent)[:150]}")
     p("\ncontent JSON keys (first 200 rows):")
+    p("  first chars of content:", repr(str(ex.content.iloc[0])[:120]))
+    parsed = [parse_content(c) for c in ex.content]
+    p(f"  parseable content: {np.mean([x is not None for x in parsed]):.1%}")
     keys = {}
-    for c in ex.content.head(200):
-        try:
-            for k in json.loads(c):
-                keys[k] = keys.get(k, 0) + 1
-        except Exception:
-            keys["<not json>"] = keys.get("<not json>", 0) + 1
-    p(" ", keys)
-    p("empty correct_answer share:",
-      f"{np.mean([json.loads(c).get('correct_answer', '') in ('', None) for c in ex.content]):.1%}")
+    for x in parsed[:500]:
+        for k in (x or {"<unparseable>": 1}):
+            keys[k] = keys.get(k, 0) + 1
+    p("  keys (first 500 rows):", keys)
+    ok = [x for x in parsed if x is not None]
+    if ok:
+        p("  empty correct_answer share:",
+          f"{np.mean([x.get('correct_answer', '') in ('', None, [], {}) for x in ok]):.1%}")
     return ex
 
 
@@ -279,13 +296,22 @@ def main():
     a = ap.parse_args()
     root = os.path.expanduser(a.root)
     p(f"python {sys.version.split()[0]}, pandas {pd.__version__}")
-    json_section(root)
-    readme_section(root)
-    ex = exercises_section(root)
-    u2, d2 = interactions_section(root, "maths_data_filtered.parquet", ex)
+    def safe(fn, *args):
+        try:
+            return fn(*args)
+        except Exception as e:
+            import traceback
+            p(f"\n!! {fn.__name__} failed: {type(e).__name__}: {e}\n" + traceback.format_exc()[-1500:])
+            return None
+
+    safe(json_section, root)
+    safe(readme_section, root)
+    ex = exercises_section(root)  # needed by everything below
+    r2 = safe(interactions_section, root, "maths_data_filtered.parquet", ex)
     if not a.skip_full:
-        u1, d1 = interactions_section(root, "maths_data.parquet", ex)
-        overlap_section(u1, u2, d1, d2)
+        r1 = safe(interactions_section, root, "maths_data.parquet", ex)
+        if r1 and r2:
+            safe(overlap_section, r1[0], r2[0], r1[1], r2[1])
     text = OUT.getvalue()
     print(text)
     with open(a.out, "w") as f:
