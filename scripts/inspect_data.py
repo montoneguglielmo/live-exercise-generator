@@ -44,7 +44,23 @@ def load(path, ext):
         note = f"(profiled first {len(df):,} rows)" if total > len(df) else ""
         return df, total, note
     if ext in {".parquet", ".pq"}:
-        df = pd.read_parquet(path)
+        try:  # read only the first row group(s) so huge files don't blow memory
+            import pyarrow.parquet as pq
+            f = pq.ParquetFile(path)
+            total = f.metadata.num_rows
+            tables, n = [], 0
+            for i in range(f.num_row_groups):
+                t = f.read_row_group(i)
+                tables.append(t)
+                n += t.num_rows
+                if n >= SAMPLE_ROWS:
+                    break
+            import pyarrow as pa
+            df = pa.concat_tables(tables).to_pandas()
+            note = f"(profiled first {len(df):,} rows)" if total > len(df) else ""
+            return df, total, note
+        except ImportError:
+            df = pd.read_parquet(path)
     elif ext == ".jsonl":
         df = pd.read_json(path, lines=True, nrows=SAMPLE_ROWS)
         return df, count_lines(path), ""
@@ -86,7 +102,9 @@ def inspect_folder(root, out):
         out.write("  !! path does not exist\n")
         return
     other, seen = [], 0
-    for dirpath, _, files in sorted(os.walk(root)):
+    for dirpath, dirs, files in sorted(os.walk(root)):
+        dirs[:] = sorted(d for d in dirs if not d.startswith("."))  # skip .cache, .git
+        files = [f for f in files if not f.startswith(".")]
         for name in sorted(files):
             path = os.path.join(dirpath, name)
             rel = os.path.relpath(path, root)
