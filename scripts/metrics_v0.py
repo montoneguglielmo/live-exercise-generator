@@ -195,6 +195,41 @@ def t2_reliability(d, col, min_n, rng):
       f"| shuffled control: r(all)={spearman(sj.mean_a, sj.mean_b):+.3f} r(within)={within(sj):+.3f}")
 
 
+def t5_history_dependence(d, col, state, min_n_cell):
+    """Does the best exercise DEPEND on the student's history?
+
+    Cell = (activity, exercise, state). Interaction effect = cell mean - exercise mean - state mean
+    + activity mean (two-way decomposition within activity). If the interaction effects replicate
+    across disjoint student halves, the right exercise depends on where the student is.
+    """
+    x = d.dropna(subset=[col] + state)[["activity_id", "exercise_id", "half", col] + state].copy()
+    x["state"] = x[state].astype(str).agg("|".join, axis=1)
+
+    def inter(frame):
+        cell = frame.groupby(["activity_id", "exercise_id", "state"], observed=True)[col].agg(["mean", "size"])
+        cell = cell[cell["size"] >= min_n_cell]
+        ex = frame.groupby(["activity_id", "exercise_id"], observed=True)[col].mean().rename("ex")
+        st = frame.groupby(["activity_id", "state"], observed=True)[col].mean().rename("st")
+        ac = frame.groupby("activity_id", observed=True)[col].mean().rename("ac")
+        c = cell.reset_index().join(ex, on=["activity_id", "exercise_id"]).join(
+            st, on=["activity_id", "state"]).join(ac, on="activity_id")
+        c["inter"] = c["mean"] - c.ex - c.st + c.ac
+        return c.set_index(["activity_id", "exercise_id", "state"]).inter
+
+    a, b = inter(x[x.half == 0]), inter(x[x.half == 1])
+    j = pd.concat([a.rename("a"), b.rename("b")], axis=1, join="inner")
+    sh = x.copy()
+    sh["state"] = sh.groupby(["activity_id", "exercise_id"], observed=True).state.transform(
+        lambda s: s.sample(frac=1, random_state=0).values)
+    sa, sb = inter(sh[sh.half == 0]), inter(sh[sh.half == 1])
+    sj = pd.concat([sa.rename("a"), sb.rename("b")], axis=1, join="inner")
+    if len(j) < 20:
+        p(f"  {col} x {state}: too few cells ({len(j)})")
+        return
+    p(f"  {col:<12} state={'+'.join(state):<22} cells={len(j):,}  r(interaction)={spearman(j.a, j.b):+.3f}"
+      f"  | shuffled-state control r={spearman(sj.a, sj.b) if len(sj) > 2 else float('nan'):+.3f}")
+
+
 def t3_similar_histories(d, col, outcome, min_n):
     a = exercise_scores(d[d.half == 0], col, min_n)["mean"].rename("score_a").reset_index()
     b = d[d.half == 1].merge(a, on=["activity_id", "exercise_id"], how="inner")
@@ -284,6 +319,14 @@ def main():
     t3_similar_histories(d, "stimulating", "stimulating", a.min_n)
     t3_similar_histories(d, "stimulating", "remaining_resid", a.min_n)
     t3_similar_histories(d, "correct", "enabler", a.min_n)
+
+    h("T5. Does the best exercise depend on the student's history? (exercise x state interaction)")
+    p("  r > 0 (and control ~0) means some exercises are better for some histories than others,")
+    p("  i.e. a per-(history, exercise) score carries information beyond a per-exercise score.")
+    t5_history_dependence(d, "enabler", ["pre_bin"], 15)
+    t5_history_dependence(d, "enabler", ["k_bucket"], 15)
+    t5_history_dependence(d, "stimulating", ["recent_bin"], 15)
+    t5_history_dependence(d, "stimulating", ["pos_bucket"], 15)
 
     h("T4. Exercise-level correlations (all students)")
     cols = ["enabler", "stimulating", "remaining_resid", "correct"]
