@@ -102,7 +102,7 @@ def inspect_folder(root, out):
         out.write("  !! path does not exist\n")
         return
     other, seen = [], 0
-    for dirpath, dirs, files in sorted(os.walk(root)):
+    for dirpath, dirs, files in os.walk(root):
         dirs[:] = sorted(d for d in dirs if not d.startswith("."))  # skip .cache, .git
         files = [f for f in files if not f.startswith(".")]
         for name in sorted(files):
