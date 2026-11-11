@@ -154,10 +154,14 @@ COLS = ["user_id", "classroom_id", "playlist_or_module_id", "exercise_id", "crea
 
 
 def load(path):
-    t = pq.read_table(path, columns=COLS)
+    avail = set(pq.ParquetFile(path).schema_arrow.names)
+    cols = [c for c in COLS + ["objective_id", "activity_id"] if c in avail]  # V2 has these
+    t = pq.read_table(path, columns=cols)
     df = t.to_pandas()
     for c in ["user_id", "classroom_id", "playlist_or_module_id", "exercise_id",
-              "work_mode", "source", "session_id"]:
+              "work_mode", "source", "session_id", "objective_id", "activity_id"]:
+        if c not in df:
+            continue
         df[c] = df[c].astype("category")
     return df
 
@@ -168,10 +172,12 @@ def interactions_section(root, name, ex):
     p(f"rows={len(df):,} users={df.user_id.nunique():,} classrooms={df.classroom_id.nunique():,} "
       f"exercises={df.exercise_id.nunique():,} sessions={df.session_id.nunique():,}")
     p(f"date range: {df.created_at.min()} -> {df.created_at.max()}")
+    p("created_at per user starts at:", df.groupby("user_id", observed=True).created_at.min().dt.date.astype(str).value_counts().head(5).to_dict())
     p("by month:", df.created_at.dt.to_period("M").value_counts().sort_index().to_dict())
     p("hour-of-day of created_at (check if time is real):",
       df.created_at.dt.hour.value_counts().sort_index().to_dict())
     p("source:", df.source.value_counts().to_dict())
+    p("work_mode x source:\n" + pd.crosstab(df.work_mode, df.source).to_string())
     p("work_mode:", df.work_mode.value_counts().to_dict())
     p("correct rate by work_mode:", df.groupby("work_mode", observed=True).data_correct.mean().round(3).to_dict())
     p("playlist_or_module_id:", df.playlist_or_module_id.value_counts().to_dict())
@@ -183,9 +189,22 @@ def interactions_section(root, name, ex):
     known = df.exercise_id.isin(set(ex.exercise_id))
     p(f"interactions whose exercise_id is in exercise table: {known.mean():.2%}")
     exm = ex.drop_duplicates("exercise_id").set_index("exercise_id")
-    df["objective_id"] = df.exercise_id.astype(str).map(exm.objective_id)
-    df["activity_id"] = df.exercise_id.astype(str).map(exm.activity_id)
-    df["module_id"] = df.exercise_id.astype(str).map(exm.module_id)
+    if "objective_id" in df:  # V2: trust the log's own activity/objective (exercises can be reused)
+        df["objective_id"] = df.objective_id.astype(str)
+        df["activity_id"] = df.activity_id.astype(str)
+        act_mod = ex.drop_duplicates("activity_id").set_index("activity_id").module_id
+        df["module_id"] = df.activity_id.map(act_mod)
+        p("log activity_id found in exercise table:", f"{df.activity_id.isin(set(ex.activity_id)).mean():.2%}")
+        pairs = set(zip(ex.exercise_id, ex.activity_id))
+        smp = df.sample(min(len(df), 200_000), random_state=0)
+        p("log (exercise, activity) pair found in table:",
+          f"{np.mean([(e, a) in pairs for e, a in zip(smp.exercise_id.astype(str), smp.activity_id)]):.2%}")
+        p("exercises appearing under >1 activity in the log:",
+          int((df.groupby("exercise_id", observed=True).activity_id.nunique() > 1).sum()))
+    else:
+        df["objective_id"] = df.exercise_id.astype(str).map(exm.objective_id)
+        df["activity_id"] = df.exercise_id.astype(str).map(exm.activity_id)
+        df["module_id"] = df.exercise_id.astype(str).map(exm.module_id)
     p("playlist_or_module_id == exercise module_id:",
       f"{(df.playlist_or_module_id.astype(str) == df.module_id).mean():.2%}")
 
