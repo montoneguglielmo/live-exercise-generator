@@ -7,3 +7,4 @@ outputs/
 metrics_v0_summary.txt
 explore_summary_v2.txt
 data_summary*.txt
+adaptive_test_summary.txt
